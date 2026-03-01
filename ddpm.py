@@ -228,10 +228,42 @@ if __name__ == "__main__":
         print(key, '=', value)
 
     # Generate the data
-    n_data = 10000000
-    toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
-    transform = lambda x: (x-0.5)*2.0
-    train_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
+    #n_data = 10000000
+    #toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
+    #transform = lambda x: (x-0.5)*2.0
+    #train_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
+    
+    # ---------------------------------------------------------
+    # 1. Chargement des données et sélection du réseau
+    # ---------------------------------------------------------
+    if args.data == 'mnist':
+        from unet import Unet # Importation de ton U-Net
+        
+        # Transformations spécifiques pour MNIST (dé-quantification vers [-1, 1])
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x + torch.rand(x.shape)/255),
+            transforms.Lambda(lambda x: (x-0.5)*2.0),
+            transforms.Lambda(lambda x: x.flatten())
+        ])
+        
+        train_dataset = datasets.MNIST('data/', train=True, download=True, transform=transform)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+        
+        D = 784 # Dimension de MNIST (28 * 28)
+        network = Unet() # Utilisation du U-Net pour MNIST
+        
+    else:
+        # Données jouets (tg ou cb)
+        n_data = 10000000
+        toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
+        transform_toy = lambda x: (x-0.5)*2.0
+        train_loader = torch.utils.data.DataLoader(transform_toy(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
+        
+        D = next(iter(train_loader)).shape[1]
+        num_hidden = 64
+        network = FcNetwork(D, num_hidden)
+
     test_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
 
     # Get the dimension of the dataset
@@ -268,21 +300,30 @@ if __name__ == "__main__":
         # Generate samples
         model.eval()
         with torch.no_grad():
-            samples = (model.sample((10000,D))).cpu() 
+            # Générer 64 images pour MNIST, ou 10000 points pour les données jouets
+            n_samples = 64 if args.data == 'mnist' else 10000
+            samples = (model.sample((n_samples, D))).cpu() 
 
-        # Transform the samples back to the original space
-        samples = samples /2 + 0.5
+        # Transform the samples back to the original space [0, 1]
+        samples = samples / 2 + 0.5
 
-        # Plot the density of the toy data and the model samples
-        coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
-        prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
+        if args.data == 'mnist':
+            # Remodeler les vecteurs 1D (784) en images 2D (1, 28, 28)
+            samples = samples.view(-1, 1, 28, 28)
+            # Sauvegarder une grille de 64 images (8x8)
+            save_image(samples, args.samples, nrow=8)
+            print(f"Images sauvegardées dans {args.samples}")
+        else:
+            # Plot the density of the toy data and the model samples
+            coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
+            prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
 
-        fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-        im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
-        ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
-        ax.set_xlim(toy.xlim)
-        ax.set_ylim(toy.ylim)
-        ax.set_aspect('equal')
-        fig.colorbar(im)
-        plt.savefig(args.samples)
-        plt.close()
+            fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+            im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
+            ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
+            ax.set_xlim(toy.xlim)
+            ax.set_ylim(toy.ylim)
+            ax.set_aspect('equal')
+            fig.colorbar(im)
+            plt.savefig(args.samples)
+            plt.close()

@@ -264,11 +264,20 @@ if __name__ == "__main__":
         num_hidden = 64
         network = FcNetwork(D, num_hidden)
 
-    test_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
+    if args.data == 'mnist':
+        test_dataset = datasets.MNIST('./data', train=False, download=True, transform=transform)
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
+    else:
+        test_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
 
     # Get the dimension of the dataset
-    D = next(iter(train_loader)).shape[1]
-
+    # Récupérer un batch
+    first_batch = next(iter(train_loader))
+    # Si c'est une liste [images, labels] (comme MNIST), on prend le premier élément
+    if isinstance(first_batch, list):
+        D = first_batch[0].shape[1]
+    else:
+        D = first_batch.shape[1]
     # Define the network
     num_hidden = 64
     network = FcNetwork(D, num_hidden)
